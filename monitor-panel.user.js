@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         localStorage Monitor Panel (Draggable Fixed Version)
+// @name         localStorage Monitor Panel (DOM Version)
 // @namespace    http://tampermonkey.net/
-// @version      2.1
-// @description  Real-time display of localStorage usage - Dragging fixed
+// @version      2.4
+// @description  Use DOM manipulation to create buttons, ensuring 100% clickable
 // @author       lueyoung
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -17,9 +17,9 @@
 
 (function() {
     'use strict';
-    
-    console.log('🚀 Draggable monitor panel script loaded (Fixed version)');
-    
+
+    console.log('🚀 Monitor panel script loaded (DOM version 2.4)');
+
     function init() {
         if (!document.body) {
             setTimeout(init, 100);
@@ -27,17 +27,17 @@
         }
         createMonitorPanel();
     }
-    
+
     function createMonitorPanel() {
         if (document.getElementById('storage-monitor-panel')) {
             console.log('⚠️ Panel already exists');
             return;
         }
-        
-        // Read last saved position from localStorage
+
+        // Read saved position
         const savedPos = localStorage.getItem('monitor-panel-position');
         let initialTop = 'auto', initialLeft = 'auto', initialBottom = '20px', initialRight = '20px';
-        
+
         if (savedPos) {
             try {
                 const pos = JSON.parse(savedPos);
@@ -45,11 +45,10 @@
                 initialLeft = pos.left;
                 initialBottom = pos.bottom;
                 initialRight = pos.right;
-            } catch (e) {
-                console.log('Unable to parse saved position, using default position');
-            }
+            } catch (e) {}
         }
-        
+
+        // ========== Create panel container ==========
         const panel = document.createElement('div');
         panel.id = 'storage-monitor-panel';
         panel.style.cssText = `
@@ -73,96 +72,54 @@
             user-select: none !important;
             transition: box-shadow 0.2s ease, transform 0.1s ease !important;
         `;
-        
+
+        // ========== Create header row ==========
+        const header = document.createElement('div');
+        header.style.cssText = 'display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;';
+
+        const titleSection = document.createElement('div');
+        titleSection.style.cssText = 'display: flex; align-items: center;';
+        titleSection.innerHTML = '<span style="font-size: 18px; margin-right: 8px;">💾</span><span style="font-weight: 600; font-size: 14px;">Storage Monitor</span>';
+
+        const btnContainer = document.createElement('div');
+        btnContainer.style.cssText = 'display: flex; gap: 10px; align-items: center;';
+
+        // Refresh button
+        const refreshBtn = document.createElement('span');
+        refreshBtn.id = 'refresh-btn';
+        refreshBtn.textContent = '🔄';
+        refreshBtn.title = 'Click to refresh data';
+        refreshBtn.style.cssText = 'font-size: 16px; opacity: 0.8; cursor: pointer; transition: all 0.3s; user-select: none;';
+
+        // Reset button
+        const resetBtn = document.createElement('span');
+        resetBtn.id = 'reset-btn';
+        resetBtn.textContent = '↺';
+        resetBtn.title = 'Click to reset position';
+        resetBtn.style.cssText = 'font-size: 16px; opacity: 0.8; cursor: pointer; transition: all 0.3s; user-select: none;';
+
+        btnContainer.appendChild(refreshBtn);
+        btnContainer.appendChild(resetBtn);
+
+        header.appendChild(titleSection);
+        header.appendChild(btnContainer);
+        panel.appendChild(header);
+
+        // ========== Create content area ==========
+        const contentArea = document.createElement('div');
+        contentArea.id = 'monitor-content';
+        panel.appendChild(contentArea);
+
         document.body.appendChild(panel);
-        console.log('✅ Draggable panel created');
-        
-        // ========== Dragging functionality (Simplified version) ==========
-        let isDragging = false;
-        let startX, startY;
-        let panelStartLeft, panelStartTop;
-        
-        panel.addEventListener('mousedown', function(e) {
-            isDragging = true;
-            
-            // Record mouse starting position
-            startX = e.clientX;
-            startY = e.clientY;
-            
-            // Get panel current position
-            const rect = panel.getBoundingClientRect();
-            panelStartLeft = rect.left;
-            panelStartTop = rect.top;
-            
-            // Switch to absolute positioning
-            panel.style.left = panelStartLeft + 'px';
-            panel.style.top = panelStartTop + 'px';
-            panel.style.right = 'auto';
-            panel.style.bottom = 'auto';
-            
-            // Visual feedback
-            panel.style.cursor = 'grabbing';
-            panel.style.boxShadow = '0 12px 32px rgba(0,0,0,0.6)';
-            
-            e.preventDefault(); // Prevent text selection
-            console.log('🖱️ Started dragging');
-        });
-        
-        document.addEventListener('mousemove', function(e) {
-            if (!isDragging) return;
-            
-            // Calculate mouse movement distance
-            const deltaX = e.clientX - startX;
-            const deltaY = e.clientY - startY;
-            
-            // Calculate new position
-            let newLeft = panelStartLeft + deltaX;
-            let newTop = panelStartTop + deltaY;
-            
-            // Limit within window bounds
-            const rect = panel.getBoundingClientRect();
-            const maxX = window.innerWidth - rect.width;
-            const maxY = window.innerHeight - rect.height;
-            
-            newLeft = Math.max(0, Math.min(newLeft, maxX));
-            newTop = Math.max(0, Math.min(newTop, maxY));
-            
-            // Apply new position
-            panel.style.left = newLeft + 'px';
-            panel.style.top = newTop + 'px';
-        });
-        
-        document.addEventListener('mouseup', function(e) {
-            if (!isDragging) return;
-            
-            isDragging = false;
-            
-            // Restore visual effects
-            panel.style.cursor = 'move';
-            panel.style.boxShadow = '0 8px 24px rgba(0,0,0,0.4)';
-            
-            // Save position
-            const rect = panel.getBoundingClientRect();
-            const savedPosition = {
-                top: rect.top + 'px',
-                left: rect.left + 'px',
-                bottom: 'auto',
-                right: 'auto'
-            };
-            
-            localStorage.setItem('monitor-panel-position', JSON.stringify(savedPosition));
-            console.log('💾 Position saved:', savedPosition);
-        });
-        
-        // ========== Double-click to reset position ==========
-        panel.addEventListener('dblclick', function(e) {
-            e.stopPropagation();
-            
+        console.log('✅ Panel created (using DOM)');
+
+        // ========== Reset position function ==========
+        function resetPosition() {
             panel.style.top = 'auto';
             panel.style.left = 'auto';
             panel.style.bottom = '20px';
             panel.style.right = '20px';
-            
+
             const defaultPosition = {
                 top: 'auto',
                 left: 'auto',
@@ -170,17 +127,16 @@
                 right: '20px'
             };
             localStorage.setItem('monitor-panel-position', JSON.stringify(defaultPosition));
-            
-            // Visual feedback
+
             panel.style.transform = 'scale(0.95)';
             setTimeout(() => {
                 panel.style.transform = 'scale(1)';
             }, 100);
-            
-            console.log('🔄 Position reset to bottom-right corner');
+
+            console.log('🔄 Position reset');
             showTooltip('Position reset');
-        });
-        
+        }
+
         // ========== Show tooltip ==========
         function showTooltip(text) {
             const tooltip = document.createElement('div');
@@ -199,29 +155,29 @@
                 animation: fadeInOut 1.5s ease;
             `;
             tooltip.textContent = text;
-            
-            const style = document.createElement('style');
-            style.textContent = `
-                @keyframes fadeInOut {
-                    0%, 100% { opacity: 0; }
-                    20%, 80% { opacity: 1; }
-                }
-            `;
+
             if (!document.querySelector('style[data-monitor-animations]')) {
+                const style = document.createElement('style');
                 style.setAttribute('data-monitor-animations', 'true');
+                style.textContent = `
+                    @keyframes fadeInOut {
+                        0%, 100% { opacity: 0; }
+                        20%, 80% { opacity: 1; }
+                    }
+                `;
                 document.head.appendChild(style);
             }
             document.body.appendChild(tooltip);
-            
+
             setTimeout(() => tooltip.remove(), 1500);
         }
-        
+
         // ========== Update panel content ==========
         function updatePanel() {
             try {
                 let totalSize = 0;
                 let itemCount = 0;
-                
+
                 for (let key in localStorage) {
                     if (localStorage.hasOwnProperty(key)) {
                         const value = localStorage[key];
@@ -229,11 +185,11 @@
                         itemCount++;
                     }
                 }
-                
+
                 const sizeMB = (totalSize / 1024 / 1024).toFixed(2);
                 const maxMB = 5.00;
                 const percent = Math.min(((totalSize / (maxMB * 1024 * 1024)) * 100), 100).toFixed(1);
-                
+
                 let statusColor, statusIcon, statusBg;
                 if (percent > 80) {
                     statusColor = '#ef4444';
@@ -248,17 +204,11 @@
                     statusIcon = '✓';
                     statusBg = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
                 }
-                
+
                 panel.style.background = statusBg;
-                
-                panel.innerHTML = `
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
-                        <div style="display: flex; align-items: center;">
-                            <span style="font-size: 18px; margin-right: 8px;">💾</span>
-                            <span style="font-weight: 600; font-size: 14px;">Storage Monitor</span>
-                        </div>
-                        <span style="font-size: 10px; opacity: 0.6; cursor: help;" title="Double-click to reset position">🔄</span>
-                    </div>
+
+                // Only update content area, don't touch buttons
+                contentArea.innerHTML = `
                     <div style="margin-bottom: 8px;">
                         <div style="font-size: 11px; opacity: 0.8; margin-bottom: 3px;">Usage</div>
                         <div style="font-size: 16px; font-weight: 600;">
@@ -280,29 +230,172 @@
                         ${itemCount} items · ${new Date().toLocaleTimeString()}
                     </div>
                     <div style="font-size: 10px; opacity: 0.5; margin-top: 4px; text-align: center;">
-                        Drag to move · Double-click to reset
+                        🔄Refresh · ↺Reset · Drag to move · Double-click to reset
                     </div>
                 `;
-                
+
             } catch (error) {
                 console.error('❌ Update failed:', error);
             }
         }
-        
+
+        // ========== Button events (permanently bound, won't be lost) ==========
+        refreshBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            console.log('✅ Refresh button clicked');
+
+            this.style.transform = 'rotate(360deg)';
+            setTimeout(() => {
+                this.style.transform = 'rotate(0deg)';
+            }, 500);
+
+            updatePanel();
+            showTooltip('Refreshed');
+        });
+
+        resetBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            console.log('✅ Reset button clicked');
+
+            this.style.transform = 'rotate(-360deg)';
+            setTimeout(() => {
+                this.style.transform = 'rotate(0deg)';
+            }, 500);
+
+            resetPosition();
+        });
+
+        // Button hover effects
+        [refreshBtn, resetBtn].forEach(btn => {
+            btn.addEventListener('mouseenter', function() {
+                this.style.opacity = '1';
+                this.style.transform = 'scale(1.2)';
+            });
+
+            btn.addEventListener('mouseleave', function() {
+                this.style.opacity = '0.8';
+                this.style.transform = 'scale(1)';
+            });
+
+            btn.addEventListener('mousedown', function(e) {
+                e.stopPropagation();
+            });
+        });
+
+        // ========== Dragging functionality ==========
+        let isDragging = false;
+        let hasMoved = false;
+        let startX, startY;
+        let panelStartLeft, panelStartTop;
+
+        panel.addEventListener('mousedown', function(e) {
+            if (e.target === refreshBtn || e.target === resetBtn) {
+                return;
+            }
+
+            isDragging = true;
+            hasMoved = false;
+
+            startX = e.clientX;
+            startY = e.clientY;
+
+            const rect = panel.getBoundingClientRect();
+            panelStartLeft = rect.left;
+            panelStartTop = rect.top;
+
+            panel.style.left = panelStartLeft + 'px';
+            panel.style.top = panelStartTop + 'px';
+            panel.style.right = 'auto';
+            panel.style.bottom = 'auto';
+
+            panel.style.cursor = 'grabbing';
+            panel.style.boxShadow = '0 12px 32px rgba(0,0,0,0.6)';
+
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (!isDragging) return;
+
+            const deltaX = e.clientX - startX;
+            const deltaY = e.clientY - startY;
+            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+            if (distance > 5) {
+                hasMoved = true;
+            }
+
+            if (hasMoved) {
+                let newLeft = panelStartLeft + deltaX;
+                let newTop = panelStartTop + deltaY;
+
+                const rect = panel.getBoundingClientRect();
+                const maxX = window.innerWidth - rect.width;
+                const maxY = window.innerHeight - rect.height;
+
+                newLeft = Math.max(0, Math.min(newLeft, maxX));
+                newTop = Math.max(0, Math.min(newTop, maxY));
+
+                panel.style.left = newLeft + 'px';
+                panel.style.top = newTop + 'px';
+            }
+        });
+
+        document.addEventListener('mouseup', function(e) {
+            if (!isDragging) return;
+
+            isDragging = false;
+
+            panel.style.cursor = 'move';
+            panel.style.boxShadow = '0 8px 24px rgba(0,0,0,0.4)';
+
+            if (!hasMoved) {
+                console.log('🔄 Panel clicked to refresh');
+                updatePanel();
+
+                panel.style.transform = 'scale(0.95)';
+                setTimeout(() => {
+                    panel.style.transform = 'scale(1)';
+                }, 100);
+
+                showTooltip('Refreshed');
+            } else {
+                const rect = panel.getBoundingClientRect();
+                const savedPosition = {
+                    top: rect.top + 'px',
+                    left: rect.left + 'px',
+                    bottom: 'auto',
+                    right: 'auto'
+                };
+
+                localStorage.setItem('monitor-panel-position', JSON.stringify(savedPosition));
+                console.log('💾 Position saved');
+            }
+        });
+
+        // Double-click to reset
+        panel.addEventListener('dblclick', function(e) {
+            if (e.target === refreshBtn || e.target === resetBtn) {
+                return;
+            }
+            e.stopPropagation();
+            resetPosition();
+        });
+
         // Update immediately
         updatePanel();
-        
-        // Update every 3 seconds
+
+        // Auto update every 3 seconds
         setInterval(updatePanel, 3000);
-        
-        console.log('✅✅✅ Draggable monitor panel completed!');
+
+        console.log('✅✅✅ Monitor panel full functionality loaded (DOM v2.4)!');
     }
-    
+
     // Startup
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {
         setTimeout(init, 1000);
     }
-    
+
 })();
