@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         localStorage Real-time Monitor Panel
+// @name         localStorage Monitor Panel (Draggable Fixed Version)
 // @namespace    http://tampermonkey.net/
-// @version      1.2
-// @description  Real-time display of localStorage usage
+// @version      2.1
+// @description  Real-time display of localStorage usage - Dragging fixed
 // @author       lueyoung
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -18,33 +18,46 @@
 (function() {
     'use strict';
     
-    console.log('🚀 Monitor panel script loaded');
+    console.log('🚀 Draggable monitor panel script loaded (Fixed version)');
     
-    // Create panel after DOM is fully loaded
     function init() {
         if (!document.body) {
-            console.log('⏳ Waiting for body to load...');
             setTimeout(init, 100);
             return;
         }
-        
-        console.log('✓ Body ready, creating panel');
         createMonitorPanel();
     }
     
     function createMonitorPanel() {
-        // Check if already exists
         if (document.getElementById('storage-monitor-panel')) {
-            console.log('⚠️ Panel already exists, skipping creation');
+            console.log('⚠️ Panel already exists');
             return;
+        }
+        
+        // Read last saved position from localStorage
+        const savedPos = localStorage.getItem('monitor-panel-position');
+        let initialTop = 'auto', initialLeft = 'auto', initialBottom = '20px', initialRight = '20px';
+        
+        if (savedPos) {
+            try {
+                const pos = JSON.parse(savedPos);
+                initialTop = pos.top;
+                initialLeft = pos.left;
+                initialBottom = pos.bottom;
+                initialRight = pos.right;
+            } catch (e) {
+                console.log('Unable to parse saved position, using default position');
+            }
         }
         
         const panel = document.createElement('div');
         panel.id = 'storage-monitor-panel';
         panel.style.cssText = `
             position: fixed !important;
-            bottom: 20px !important;
-            right: 20px !important;
+            top: ${initialTop} !important;
+            left: ${initialLeft} !important;
+            bottom: ${initialBottom} !important;
+            right: ${initialRight} !important;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important;
             padding: 16px 20px !important;
@@ -56,16 +69,154 @@
             min-width: 240px !important;
             backdrop-filter: blur(10px) !important;
             border: 1px solid rgba(255,255,255,0.3) !important;
-            cursor: pointer !important;
+            cursor: move !important;
             user-select: none !important;
-            transition: transform 0.1s ease !important;
+            transition: box-shadow 0.2s ease, transform 0.1s ease !important;
         `;
         
-        // Add to page
         document.body.appendChild(panel);
-        console.log('✅ Panel added to DOM');
+        console.log('✅ Draggable panel created');
         
-        // Update function
+        // ========== Dragging functionality (Simplified version) ==========
+        let isDragging = false;
+        let startX, startY;
+        let panelStartLeft, panelStartTop;
+        
+        panel.addEventListener('mousedown', function(e) {
+            isDragging = true;
+            
+            // Record mouse starting position
+            startX = e.clientX;
+            startY = e.clientY;
+            
+            // Get panel current position
+            const rect = panel.getBoundingClientRect();
+            panelStartLeft = rect.left;
+            panelStartTop = rect.top;
+            
+            // Switch to absolute positioning
+            panel.style.left = panelStartLeft + 'px';
+            panel.style.top = panelStartTop + 'px';
+            panel.style.right = 'auto';
+            panel.style.bottom = 'auto';
+            
+            // Visual feedback
+            panel.style.cursor = 'grabbing';
+            panel.style.boxShadow = '0 12px 32px rgba(0,0,0,0.6)';
+            
+            e.preventDefault(); // Prevent text selection
+            console.log('🖱️ Started dragging');
+        });
+        
+        document.addEventListener('mousemove', function(e) {
+            if (!isDragging) return;
+            
+            // Calculate mouse movement distance
+            const deltaX = e.clientX - startX;
+            const deltaY = e.clientY - startY;
+            
+            // Calculate new position
+            let newLeft = panelStartLeft + deltaX;
+            let newTop = panelStartTop + deltaY;
+            
+            // Limit within window bounds
+            const rect = panel.getBoundingClientRect();
+            const maxX = window.innerWidth - rect.width;
+            const maxY = window.innerHeight - rect.height;
+            
+            newLeft = Math.max(0, Math.min(newLeft, maxX));
+            newTop = Math.max(0, Math.min(newTop, maxY));
+            
+            // Apply new position
+            panel.style.left = newLeft + 'px';
+            panel.style.top = newTop + 'px';
+        });
+        
+        document.addEventListener('mouseup', function(e) {
+            if (!isDragging) return;
+            
+            isDragging = false;
+            
+            // Restore visual effects
+            panel.style.cursor = 'move';
+            panel.style.boxShadow = '0 8px 24px rgba(0,0,0,0.4)';
+            
+            // Save position
+            const rect = panel.getBoundingClientRect();
+            const savedPosition = {
+                top: rect.top + 'px',
+                left: rect.left + 'px',
+                bottom: 'auto',
+                right: 'auto'
+            };
+            
+            localStorage.setItem('monitor-panel-position', JSON.stringify(savedPosition));
+            console.log('💾 Position saved:', savedPosition);
+        });
+        
+        // ========== Double-click to reset position ==========
+        panel.addEventListener('dblclick', function(e) {
+            e.stopPropagation();
+            
+            panel.style.top = 'auto';
+            panel.style.left = 'auto';
+            panel.style.bottom = '20px';
+            panel.style.right = '20px';
+            
+            const defaultPosition = {
+                top: 'auto',
+                left: 'auto',
+                bottom: '20px',
+                right: '20px'
+            };
+            localStorage.setItem('monitor-panel-position', JSON.stringify(defaultPosition));
+            
+            // Visual feedback
+            panel.style.transform = 'scale(0.95)';
+            setTimeout(() => {
+                panel.style.transform = 'scale(1)';
+            }, 100);
+            
+            console.log('🔄 Position reset to bottom-right corner');
+            showTooltip('Position reset');
+        });
+        
+        // ========== Show tooltip ==========
+        function showTooltip(text) {
+            const tooltip = document.createElement('div');
+            tooltip.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: rgba(0, 0, 0, 0.9);
+                color: white;
+                padding: 12px 20px;
+                border-radius: 8px;
+                font-size: 14px;
+                z-index: 2147483648;
+                pointer-events: none;
+                animation: fadeInOut 1.5s ease;
+            `;
+            tooltip.textContent = text;
+            
+            const style = document.createElement('style');
+            style.textContent = `
+                @keyframes fadeInOut {
+                    0%, 100% { opacity: 0; }
+                    20%, 80% { opacity: 1; }
+                }
+            `;
+            if (!document.querySelector('style[data-monitor-animations]')) {
+                style.setAttribute('data-monitor-animations', 'true');
+                document.head.appendChild(style);
+            }
+            document.body.appendChild(tooltip);
+            
+            setTimeout(() => tooltip.remove(), 1500);
+        }
+        
+        // ========== Update panel content ==========
         function updatePanel() {
             try {
                 let totalSize = 0;
@@ -74,16 +225,15 @@
                 for (let key in localStorage) {
                     if (localStorage.hasOwnProperty(key)) {
                         const value = localStorage[key];
-                        totalSize += (value.length + key.length) * 2; // Unicode characters take 2 bytes
+                        totalSize += (value.length + key.length) * 2;
                         itemCount++;
                     }
                 }
                 
                 const sizeMB = (totalSize / 1024 / 1024).toFixed(2);
-                const maxMB = 5.00; // Most browsers limit
+                const maxMB = 5.00;
                 const percent = Math.min(((totalSize / (maxMB * 1024 * 1024)) * 100), 100).toFixed(1);
                 
-                // Colors and icons
                 let statusColor, statusIcon, statusBg;
                 if (percent > 80) {
                     statusColor = '#ef4444';
@@ -102,9 +252,12 @@
                 panel.style.background = statusBg;
                 
                 panel.innerHTML = `
-                    <div style="display: flex; align-items: center; margin-bottom: 10px;">
-                        <span style="font-size: 18px; margin-right: 8px;">💾</span>
-                        <span style="font-weight: 600; font-size: 14px;">Storage Monitor</span>
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                        <div style="display: flex; align-items: center;">
+                            <span style="font-size: 18px; margin-right: 8px;">💾</span>
+                            <span style="font-weight: 600; font-size: 14px;">Storage Monitor</span>
+                        </div>
+                        <span style="font-size: 10px; opacity: 0.6; cursor: help;" title="Double-click to reset position">🔄</span>
                     </div>
                     <div style="margin-bottom: 8px;">
                         <div style="font-size: 11px; opacity: 0.8; margin-bottom: 3px;">Usage</div>
@@ -126,43 +279,29 @@
                     <div style="font-size: 11px; opacity: 0.6; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.15);">
                         ${itemCount} items · ${new Date().toLocaleTimeString()}
                     </div>
-                `;
-                
-                console.log(`📊 Updated: ${sizeMB} MB (${percent}%) - ${itemCount} items`);
-            } catch (error) {
-                console.error('❌ Failed to update panel:', error);
-                panel.innerHTML = `
-                    <div style="color: #ef4444;">
-                        ❌ Update failed
+                    <div style="font-size: 10px; opacity: 0.5; margin-top: 4px; text-align: center;">
+                        Drag to move · Double-click to reset
                     </div>
                 `;
+                
+            } catch (error) {
+                console.error('❌ Update failed:', error);
             }
         }
-        
-        // Click to refresh
-        panel.addEventListener('click', function() {
-            panel.style.transform = 'scale(0.95)';
-            setTimeout(() => {
-                panel.style.transform = 'scale(1)';
-            }, 100);
-            updatePanel();
-            console.log('🔄 Manual refresh');
-        });
         
         // Update immediately
         updatePanel();
         
-        // Auto update every 3 seconds
+        // Update every 3 seconds
         setInterval(updatePanel, 3000);
         
-        console.log('✅✅✅ Monitor panel created and running!');
+        console.log('✅✅✅ Draggable monitor panel completed!');
     }
     
     // Startup
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {
-        // Delay 1 second to ensure page stability
         setTimeout(init, 1000);
     }
     
