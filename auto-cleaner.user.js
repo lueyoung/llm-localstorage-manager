@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         LLM localStorage Auto Cleaner
+// @name         LLM localStorage Auto Cleaner - Enhanced Version
 // @namespace    http://tampermonkey.net/
-// @version      1.2
-// @description  Automatically clean localStorage to prevent QuotaExceededError
+// @version      2.0
+// @description  Automatically clean localStorage to prevent QuotaExceededError (Enhanced - Auto-Clear)
 // @author       lueyoung
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -20,58 +20,88 @@
 
     // ========== Configuration ==========
     const CONFIG = {
-        // Check interval (milliseconds), 60000 = 1 minute
-        checkInterval: 60000,
-        
-        // localStorage usage threshold (bytes), clean when exceeded
-        maxStorageSize: 4 * 1024 * 1024, // 4MB
-        
+        // Check interval (milliseconds)
+        checkInterval: 30000, // 30 seconds
+
+        // localStorage usage threshold (bytes) - Reduced to 2MB
+        maxStorageSize: 2 * 1024 * 1024, // 2MB (Safer)
+
+        // Emergency cleanup threshold - Aggressive cleanup when exceeded
+        emergencyThreshold: 3 * 1024 * 1024, // 3MB
+
         // Show notifications
         showNotification: true,
-        
-        // Specific keys to clean (empty = clean all)
-        specificKeys: ['RESUME_TOKEN_STORE_KEY', 'conversation_history', 'chat_cache'],
-        
-        // Clean mode: 'all' = clean all, 'specific' = clean specified keys only, 'smart' = intelligently clean old data
-        cleanMode: 'smart'
+
+        // Problematic key prefixes (will be cleaned first)
+        problematicPrefixes: [
+            'statsig',
+            'failed_logs',
+            '__Secure',
+            'analytics',
+            'tracking',
+            'telemetry'
+        ],
+
+        // Cleanup ratio (percentage to delete when exceeded)
+        normalCleanRatio: 0.5,    // Normal: 50%
+        emergencyCleanRatio: 0.8,  // Emergency: 80%
+
+        // Single key size limit (keys exceeding this will be deleted)
+        maxKeySize: 500 * 1024, // 500KB
+
+        // Auto reload delay (milliseconds)
+        autoReloadDelay: 3000, // 3 seconds
     };
 
     // ========== Core Functions ==========
-    
+
     // Calculate localStorage usage
     function getStorageSize() {
         let total = 0;
         for (let key in localStorage) {
             if (localStorage.hasOwnProperty(key)) {
-                total += (localStorage[key].length + key.length) * 2; // Unicode characters take 2 bytes
+                total += (localStorage[key].length + key.length) * 2;
             }
         }
         return total;
     }
 
+    // Get size of a single key
+    function getKeySize(key) {
+        const value = localStorage.getItem(key);
+        if (!value) return 0;
+        return (value.length + key.length) * 2;
+    }
+
     // Show notification
     function showNotify(message, type = 'info') {
         if (!CONFIG.showNotification) return;
-        
+
+        const colors = {
+            success: '#4CAF50',
+            info: '#2196F3',
+            warning: '#FF9800',
+            error: '#F44336'
+        };
+
         const notification = document.createElement('div');
         notification.style.cssText = `
             position: fixed;
             top: 20px;
             right: 20px;
             padding: 15px 20px;
-            background: ${type === 'success' ? '#4CAF50' : type === 'error' ? '#f44336' : '#2196F3'};
+            background: ${colors[type] || colors.info};
             color: white;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
             z-index: 999999;
             font-family: Arial, sans-serif;
             font-size: 14px;
-            max-width: 300px;
+            max-width: 320px;
             animation: slideIn 0.3s ease-out;
         `;
         notification.textContent = message;
-        
-        // Add animation
+
         const style = document.createElement('style');
         style.textContent = `
             @keyframes slideIn {
@@ -79,143 +109,162 @@
                 to { transform: translateX(0); opacity: 1; }
             }
         `;
-        
-        // Wait for DOM ready
-        const addNotification = () => {
-            if (document.head && document.body) {
-                document.head.appendChild(style);
-                document.body.appendChild(notification);
-                
-                setTimeout(() => {
-                    notification.style.animation = 'slideIn 0.3s ease-out reverse';
-                    setTimeout(() => notification.remove(), 300);
-                }, 3000);
-            } else {
-                setTimeout(addNotification, 100);
-            }
-        };
-        addNotification();
+        document.head.appendChild(style);
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+            notification.style.animation = 'slideIn 0.3s ease-out reverse';
+            setTimeout(() => notification.remove(), 300);
+        }, 3000);
     }
 
-    // Clean all
-    function cleanAll() {
-        const sizeBefore = getStorageSize();
-        localStorage.clear();
-        const sizeAfter = getStorageSize();
-        const cleaned = ((sizeBefore - sizeAfter) / 1024 / 1024).toFixed(2);
-        console.log(`[LLM Cleaner] Cleaned ${cleaned} MB of data`);
-        showNotify(`✓ Cleaned ${cleaned} MB localStorage`, 'success');
+    // Check if key is problematic
+    function isProblematicKey(key) {
+        return CONFIG.problematicPrefixes.some(prefix => 
+            key.toLowerCase().includes(prefix.toLowerCase())
+        );
     }
 
-    // Clean specific keys
-    function cleanSpecific() {
-        let cleaned = 0;
-        CONFIG.specificKeys.forEach(key => {
-            const item = localStorage.getItem(key);
-            if (item) {
-                cleaned += (item.length + key.length) * 2;
-                localStorage.removeItem(key);
-            }
-        });
-        const cleanedMB = (cleaned / 1024 / 1024).toFixed(2);
-        console.log(`[LLM Cleaner] Cleaned specified keys, freed ${cleanedMB} MB`);
-        showNotify(`✓ Cleaned specified data ${cleanedMB} MB`, 'success');
-    }
-
-    // Smart clean (delete oldest data)
-    function cleanSmart() {
+    // Enhanced smart clean
+    function smartClean(isEmergency = false) {
         const items = [];
-        
-        // Collect all keys with timestamps
+        const problematicItems = [];
+        const oversizedItems = [];
+
+        console.log(`[LLM Cleaner] Starting ${isEmergency ? 'emergency' : 'regular'} cleanup...`);
+
+        // Categorize and collect all keys
         for (let key in localStorage) {
             if (localStorage.hasOwnProperty(key)) {
                 const value = localStorage[key];
-                let timestamp = 0;
-                
-                // Try to extract timestamp from key name
+                const size = (value.length + key.length) * 2;
+                let timestamp = Date.now();
+
+                // Try to extract timestamp
                 const match = key.match(/_(\d{13})$/);
                 if (match) {
                     timestamp = parseInt(match[1]);
                 } else {
-                    // Try to parse JSON to get timestamp
                     try {
                         const parsed = JSON.parse(value);
-                        timestamp = parsed.timestamp || parsed.createdAt || parsed.updatedAt || 0;
+                        timestamp = parsed.timestamp || parsed.createdAt || parsed.updatedAt || Date.now();
                     } catch (e) {
-                        // Non-JSON data, use current time
-                        timestamp = Date.now();
+                        // Non-JSON, keep current time
                     }
                 }
-                
-                items.push({
-                    key,
-                    timestamp,
-                    size: (value.length + key.length) * 2
-                });
+
+                const item = { key, timestamp, size };
+
+                // Categorize
+                if (size > CONFIG.maxKeySize) {
+                    oversizedItems.push(item);
+                    console.warn(`[LLM Cleaner] Found oversized key: ${key} (${(size / 1024).toFixed(2)} KB)`);
+                } else if (isProblematicKey(key)) {
+                    problematicItems.push(item);
+                } else {
+                    items.push(item);
+                }
             }
         }
+
+        let cleaned = 0;
+        let deletedCount = 0;
+
+        // 1. First delete all oversized keys
+        oversizedItems.forEach(item => {
+            localStorage.removeItem(item.key);
+            cleaned += item.size;
+            deletedCount++;
+            console.log(`[LLM Cleaner] Deleted oversized key: ${item.key}`);
+        });
+
+        // 2. Delete all problematic keys
+        problematicItems.forEach(item => {
+            localStorage.removeItem(item.key);
+            cleaned += item.size;
+            deletedCount++;
+        });
         
-        // Sort by time (oldest first)
+        if (problematicItems.length > 0) {
+            console.log(`[LLM Cleaner] Deleted ${problematicItems.length} problematic keys`);
+        }
+
+        // 3. Sort normal keys by time, delete old data
         items.sort((a, b) => a.timestamp - b.timestamp);
         
-        // Delete oldest 30%
-        const toDelete = Math.ceil(items.length * 0.3);
-        let cleaned = 0;
-        
-        for (let i = 0; i < toDelete; i++) {
+        const ratio = isEmergency ? CONFIG.emergencyCleanRatio : CONFIG.normalCleanRatio;
+        const toDelete = Math.ceil(items.length * ratio);
+
+        for (let i = 0; i < toDelete && i < items.length; i++) {
             localStorage.removeItem(items[i].key);
             cleaned += items[i].size;
+            deletedCount++;
         }
-        
+
         const cleanedMB = (cleaned / 1024 / 1024).toFixed(2);
-        console.log(`[LLM Cleaner] Smart cleaned ${toDelete} old items, freed ${cleanedMB} MB`);
-        showNotify(`✓ Smart cleaned ${toDelete} old items`, 'success');
+        console.log(`[LLM Cleaner] Deleted ${deletedCount} items total, freed ${cleanedMB} MB`);
+        showNotify(`✓ Cleaned ${deletedCount} items (${cleanedMB} MB)`, 'success');
+
+        return cleaned;
     }
 
     // Main check function
     function checkAndClean() {
         const currentSize = getStorageSize();
         const sizeMB = (currentSize / 1024 / 1024).toFixed(2);
-        
-        console.log(`[LLM Cleaner] Current usage: ${sizeMB} MB / ${(CONFIG.maxStorageSize / 1024 / 1024).toFixed(2)} MB`);
-        
-        if (currentSize > CONFIG.maxStorageSize) {
-            console.warn(`[LLM Cleaner] Storage exceeded! Starting cleanup...`);
-            
-            switch (CONFIG.cleanMode) {
-                case 'all':
-                    cleanAll();
-                    break;
-                case 'specific':
-                    cleanSpecific();
-                    break;
-                case 'smart':
-                    cleanSmart();
-                    break;
-                default:
-                    cleanSmart();
-            }
+        const maxMB = (CONFIG.maxStorageSize / 1024 / 1024).toFixed(2);
+        const emergencyMB = (CONFIG.emergencyThreshold / 1024 / 1024).toFixed(2);
+
+        console.log(`[LLM Cleaner] Current usage: ${sizeMB} MB / ${maxMB} MB (Emergency line: ${emergencyMB} MB)`);
+
+        // Emergency cleanup
+        if (currentSize > CONFIG.emergencyThreshold) {
+            console.error(`[LLM Cleaner] 🚨 Emergency cleanup triggered!`);
+            showNotify('🚨 Storage critically exceeded, performing emergency cleanup...', 'warning');
+            smartClean(true);
+        } 
+        // Regular cleanup
+        else if (currentSize > CONFIG.maxStorageSize) {
+            console.warn(`[LLM Cleaner] ⚠️ Storage exceeded, starting cleanup...`);
+            smartClean(false);
         }
     }
 
-    // Intercept localStorage.setItem, check before writing
+    // Intercept localStorage.setItem
     const originalSetItem = localStorage.setItem;
     localStorage.setItem = function(key, value) {
         try {
             originalSetItem.call(localStorage, key, value);
         } catch (e) {
             if (e.name === 'QuotaExceededError') {
-                console.error(`[LLM Cleaner] Caught QuotaExceededError, cleaning immediately`);
-                showNotify('⚠️ Storage full, cleaning...', 'info');
-                checkAndClean();
+                console.error(`[LLM Cleaner] Caught QuotaExceededError, performing emergency cleanup immediately`);
+                showNotify('⚠️ Storage full, performing emergency cleanup...', 'warning');
                 
-                // Retry writing
-                try {
-                    originalSetItem.call(localStorage, key, value);
-                } catch (retryError) {
-                    console.error('[LLM Cleaner] Still unable to write after cleaning:', retryError);
-                    showNotify('❌ Unable to write after cleaning, please clean manually', 'error');
-                }
+                // Execute emergency cleanup
+                smartClean(true);
+                
+                // Retry after 100ms
+                setTimeout(() => {
+                    try {
+                        originalSetItem.call(localStorage, key, value);
+                        console.log(`[LLM Cleaner] ✓ Successfully wrote after cleanup: ${key}`);
+                    } catch (retryError) {
+                        console.error('[LLM Cleaner] ❌ Still unable to write after cleanup:', retryError);
+                        console.warn('[LLM Cleaner] 🗑️ Executing final solution: Clear all storage');
+                        showNotify('⚠️ Auto-clearing storage to restore normal operation...', 'warning');
+                        
+                        // Auto clear all (no confirmation dialog)
+                        localStorage.clear();
+                        console.log('[LLM Cleaner] ✓ Cleared all localStorage');
+                        showNotify(`✓ Storage cleared, auto-reloading in ${CONFIG.autoReloadDelay/1000} seconds`, 'success');
+                        
+                        // Auto reload page
+                        setTimeout(() => {
+                            console.log('[LLM Cleaner] 🔄 Auto-reloading page...');
+                            location.reload();
+                        }, CONFIG.autoReloadDelay);
+                    }
+                }, 100);
             } else {
                 throw e;
             }
@@ -223,13 +272,22 @@
     };
 
     // ========== Startup ==========
-    console.log('[LLM Cleaner] Started, monitoring...');
-    showNotify('🛡️ localStorage Auto Cleaner started');
-    
+    console.log('[LLM Cleaner v2.0] Started, enhanced monitoring active...');
+    console.log('[LLM Cleaner] Configuration: Auto-clear mode enabled');
+    showNotify('🛡️ Enhanced cleaner started', 'info');
+
     // Check immediately once
     checkAndClean();
-    
+
     // Regular check
     setInterval(checkAndClean, CONFIG.checkInterval);
+
+    // Check before page unload
+    window.addEventListener('beforeunload', () => {
+        const size = getStorageSize();
+        if (size > CONFIG.maxStorageSize) {
+            smartClean(true);
+        }
+    });
 
 })();
