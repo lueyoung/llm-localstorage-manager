@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         LLM localStorage Auto Cleaner - Enhanced Version
 // @namespace    http://tampermonkey.net/
-// @version      2.0
-// @description  Automatically clean localStorage to prevent QuotaExceededError (Enhanced - Auto-Clear)
+// @version      2.1
+// @description  Automatically clean localStorage to prevent QuotaExceededError (No Auto-Reload)
 // @author       lueyoung
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -23,10 +23,10 @@
         // Check interval (milliseconds)
         checkInterval: 30000, // 30 seconds
 
-        // localStorage usage threshold (bytes) - Reduced to 2MB
-        maxStorageSize: 2 * 1024 * 1024, // 2MB (Safer)
+        // localStorage usage threshold (bytes)
+        maxStorageSize: 2 * 1024 * 1024, // 2MB
 
-        // Emergency cleanup threshold - Aggressive cleanup when exceeded
+        // Emergency cleanup threshold
         emergencyThreshold: 3 * 1024 * 1024, // 3MB
 
         // Show notifications
@@ -42,15 +42,12 @@
             'telemetry'
         ],
 
-        // Cleanup ratio (percentage to delete when exceeded)
+        // Cleanup ratio
         normalCleanRatio: 0.5,    // Normal: 50%
         emergencyCleanRatio: 0.8,  // Emergency: 80%
 
-        // Single key size limit (keys exceeding this will be deleted)
+        // Single key size limit
         maxKeySize: 500 * 1024, // 500KB
-
-        // Auto reload delay (milliseconds)
-        autoReloadDelay: 3000, // 3 seconds
     };
 
     // ========== Core Functions ==========
@@ -256,13 +253,9 @@
                         // Auto clear all (no confirmation dialog)
                         localStorage.clear();
                         console.log('[LLM Cleaner] ✓ Cleared all localStorage');
-                        showNotify(`✓ Storage cleared, auto-reloading in ${CONFIG.autoReloadDelay/1000} seconds`, 'success');
                         
-                        // Auto reload page
-                        setTimeout(() => {
-                            console.log('[LLM Cleaner] 🔄 Auto-reloading page...');
-                            location.reload();
-                        }, CONFIG.autoReloadDelay);
+                        // No auto-reload, only notify
+                        showNotify('✓ Storage cleared. Please refresh manually if needed', 'success');
                     }
                 }, 100);
             } else {
@@ -272,8 +265,8 @@
     };
 
     // ========== Startup ==========
-    console.log('[LLM Cleaner v2.0] Started, enhanced monitoring active...');
-    console.log('[LLM Cleaner] Configuration: Auto-clear mode enabled');
+    console.log('[LLM Cleaner v2.1] Started, enhanced monitoring active...');
+    console.log('[LLM Cleaner] Configuration: Auto-clear mode | No auto-reload');
     showNotify('🛡️ Enhanced cleaner started', 'info');
 
     // Check immediately once
